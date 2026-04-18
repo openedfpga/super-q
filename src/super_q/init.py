@@ -52,6 +52,7 @@ class InitOptions:
     description: str = ""
     version: str = "0.1.0"
     super_q_ref: str = "main"
+    super_q_repo: str = "super-q/super-q"   # <owner>/<repo> for the reusable workflow `uses:`
     ci_only: bool = False
     force: bool = False                    # overwrite existing files
     git_init: bool = True                   # run `git init` after scaffold
@@ -185,7 +186,7 @@ def _vars(opts: InitOptions) -> dict[str, str]:
     # pip target for inline mode — users can override to point at a forked
     # super-q, a private GHCR wheel, or a pinned PyPI release.
     pip_target = opts.super_q_pip or (
-        f"super-q @ git+https://github.com/super-q/super-q@{opts.super_q_ref}"
+        f"super-q @ git+https://github.com/{opts.super_q_repo}@{opts.super_q_ref}"
     )
     return {
         "author":          opts.author,
@@ -196,6 +197,7 @@ def _vars(opts: InitOptions) -> dict[str, str]:
         "version":         opts.version,
         "date":            datetime.now(UTC).strftime("%Y-%m-%d"),
         "super_q_ref":     opts.super_q_ref,
+        "super_q_repo":    opts.super_q_repo,
         "super_q_pip":     pip_target,
         "primary_platform": opts.primary_platform,
         "platform_ids_json": ", ".join(f"\"{p}\"" for p in opts.platform_ids),
@@ -218,7 +220,7 @@ on:
 
 jobs:
   build:
-    uses: super-q/super-q/.github/workflows/reusable-build.yml@{super_q_ref}
+    uses: {super_q_repo}/.github/workflows/reusable-build.yml@{super_q_ref}
     with:
       core-path: .
       seeds: "{seeds_build}"
@@ -241,7 +243,7 @@ on:
 
 jobs:
   release:
-    uses: super-q/super-q/.github/workflows/reusable-release.yml@{super_q_ref}
+    uses: {super_q_repo}/.github/workflows/reusable-release.yml@{super_q_ref}
     with:
       core-path: .
       seeds: "{seeds_release}"

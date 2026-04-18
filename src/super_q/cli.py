@@ -862,6 +862,10 @@ def init_cmd(
     version: str = typer.Option("0.1.0", "--version", help="Initial version stamped into core.json"),
     super_q_ref: str = typer.Option("main", "--super-q-ref",
                                      help="super-q Git ref the generated workflows will call"),
+    super_q_repo: str = typer.Option(
+        "super-q/super-q", "--super-q-repo",
+        help="<owner>/<repo> where super-q lives on GitHub (e.g. ericlewis/super-q)",
+    ),
     platform_id: list[str] = typer.Option(
         [], "--platform",
         help="Platform id(s) for core.json. Repeat for multiples; defaults to the core shortname.",
@@ -926,6 +930,7 @@ def init_cmd(
             description=description,
             version=version,
             super_q_ref=super_q_ref,
+            super_q_repo=super_q_repo,
             platform_ids=list(platform_id),
             ci_only=ci_only,
             force=force,

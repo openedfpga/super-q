@@ -94,6 +94,23 @@ def test_workflow_references_super_q_ref(tmp_path: Path):
     assert "reusable-release.yml@v0.2.0" in release
 
 
+def test_workflow_respects_super_q_repo_override(tmp_path: Path):
+    """When super-q lives at ericlewis/super-q instead of super-q/super-q,
+    the generated `uses:` line follows the override."""
+    opts = InitOptions(
+        target=tmp_path / "t", author="a", name="b",
+        super_q_repo="ericlewis/super-q",
+        git_init=False,
+    )
+    scaffold(opts)
+    build = (tmp_path / "t/.github/workflows/build.yml").read_text()
+    release = (tmp_path / "t/.github/workflows/release.yml").read_text()
+    assert "uses: ericlewis/super-q/.github/workflows/reusable-build.yml" in build
+    assert "uses: ericlewis/super-q/.github/workflows/reusable-release.yml" in release
+    assert "super-q/super-q" not in build
+    assert "super-q/super-q" not in release
+
+
 def test_multiple_platforms(tmp_path: Path):
     opts = InitOptions(
         target=tmp_path / "t", author="a", name="multi",
