@@ -24,6 +24,8 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
+import threading
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -52,6 +54,9 @@ class BuildRequest:
     parallel_threads: int = 2     # fitter threads per run
     timeout_s: int = 60 * 60       # hard ceiling (1h)
     extra_assignments: dict[str, str] | None = None
+    # Scheduler sets this when early-exit fires; `_run` polls it and
+    # kills the Quartus process group instead of waiting for timeout.
+    cancel_event: threading.Event | None = None
 
 
 @dataclass
@@ -125,7 +130,7 @@ def run_full_compile(req: BuildRequest) -> BuildResult:
     )
 
     rc = _run(args, cwd=qdir, log_path=log_path, timeout_s=req.timeout_s,
-              threads=req.parallel_threads)
+              threads=req.parallel_threads, cancel_event=req.cancel_event)
 
     timing = _read_timing(qdir, req.core.project_name)
     rbf = qdir / "output_files" / f"{req.core.project_name}.rbf"
@@ -188,7 +193,7 @@ def run_split_fit(req: BuildRequest) -> BuildResult:
     )
 
     rc = _run(args, cwd=qdir, log_path=log_path, timeout_s=req.timeout_s,
-              threads=req.parallel_threads)
+              threads=req.parallel_threads, cancel_event=req.cancel_event)
 
     timing = _read_timing(qdir, req.core.project_name)
     rbf = qdir / "output_files" / f"{req.core.project_name}.rbf"
@@ -270,30 +275,93 @@ def _env(req: BuildRequest) -> dict[str, str]:
 
 
 def _run(args: list[str], *, cwd: Path, log_path: Path, timeout_s: int,
-         threads: int, env_extra: dict[str, str] | None = None) -> int:
+         threads: int, env_extra: dict[str, str] | None = None,
+         cancel_event: "threading.Event | None" = None) -> int:
+    """Run `quartus_*` with timeout + cooperative cancellation.
+
+    `cancel_event` (when provided) lets the scheduler tell this runner
+    to stop — we poll it while the subprocess is alive and kill the
+    process group on set. Without this, in-flight Quartus compiles
+    would block for `timeout_s` seconds (default 3600) even after the
+    sweep has early-exited with a passing seed elsewhere.
+    """
+    import threading  # noqa: PLC0415 — avoid a module-level cost on import
+
     env = os.environ.copy()
     # Cap threads inside Quartus; we scale parallelism by running more seeds.
     env["QUARTUS_NUM_PARALLEL_PROCESSORS"] = str(max(1, threads))
     if env_extra:
         env.update(env_extra)
     log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Start our own process group so we can SIGTERM the whole Quartus
+    # invocation tree, not just the top-level quartus_sh shim. On POSIX
+    # `os.setsid` creates a new session; on Windows the corresponding
+    # flag is CREATE_NEW_PROCESS_GROUP. We run Quartus only on POSIX
+    # in CI, so the POSIX path is load-bearing; the Windows fallback
+    # is best-effort.
+    preexec = os.setsid if sys.platform != "win32" else None
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+
     with open(log_path, "w", buffering=1) as log:
         log.write(f"# cmd: {' '.join(args)}\n# cwd: {cwd}\n\n")
         log.flush()
+        proc = subprocess.Popen(
+            args,
+            cwd=str(cwd),
+            env=env,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            preexec_fn=preexec,
+            creationflags=creationflags,
+        )
+        start = time.time()
         try:
-            proc = subprocess.run(
-                args,
-                cwd=str(cwd),
-                env=env,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                timeout=timeout_s,
-                check=False,
-            )
-            return proc.returncode
+            while True:
+                try:
+                    return proc.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    pass
+                if cancel_event is not None and cancel_event.is_set():
+                    log.write("\n# cancelled — terminating process group\n")
+                    log.flush()
+                    _terminate_group(proc)
+                    return 130            # 128 + SIGINT(2)
+                if time.time() - start > timeout_s:
+                    log.write(f"\n# TIMEOUT after {timeout_s}s — terminating\n")
+                    log.flush()
+                    _terminate_group(proc)
+                    return 124
+        except KeyboardInterrupt:
+            _terminate_group(proc)
+            raise
+
+
+def _terminate_group(proc: subprocess.Popen) -> None:
+    """Best-effort SIGTERM the subprocess group, then SIGKILL if it lingers."""
+    try:
+        if sys.platform == "win32":
+            proc.send_signal(getattr(subprocess.signal, "CTRL_BREAK_EVENT", 2))
+        else:
+            os.killpg(os.getpgid(proc.pid), 15)  # SIGTERM
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        try:
+            if sys.platform != "win32":
+                os.killpg(os.getpgid(proc.pid), 9)  # SIGKILL
+            else:
+                proc.kill()
+        except (ProcessLookupError, OSError):
+            pass
+        try:
+            proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            log.write(f"\n# TIMEOUT after {timeout_s}s\n")
-            return 124
+            pass
 
 
 def _read_timing(qdir: Path, project: str) -> TimingReport | None:

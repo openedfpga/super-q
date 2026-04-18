@@ -7,7 +7,8 @@ scheduler's problem, not the backend's.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import threading
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -31,6 +32,8 @@ class TaskSpec:
     threads: int = 2
     timeout_s: int = 60 * 60
     extra_assignments: dict[str, str] | None = None
+    # Shared flag the scheduler sets to abort in-flight work on early-exit.
+    cancel_event: threading.Event | None = None
 
 
 @dataclass

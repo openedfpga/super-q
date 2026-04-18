@@ -68,6 +68,7 @@ class LocalBackend:
             parallel_threads=spec.threads or self._threads,
             timeout_s=spec.timeout_s,
             extra_assignments=spec.extra_assignments,
+            cancel_event=spec.cancel_event,
         )
         result = (quartus.run_split_fit(req)
                   if spec.mode == "split-fit"

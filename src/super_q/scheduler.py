@@ -110,6 +110,7 @@ class Scheduler:
                 cancel_flag=cancel_flag,
             )
 
+            early_exit = False
             for fut in as_completed(futures):
                 task_id, spec, outcome = fut.result()
                 sr = self._record_outcome(job_id, task_id, spec, outcome)
@@ -121,12 +122,23 @@ class Scheduler:
                 if sr.passed and plan.stop_on_first_pass:
                     log.info("seed=%s passed; signaling early exit", sr.seed)
                     cancel_flag.set()
-                    # Cancel all futures we haven't started; in-flight work
-                    # will finish naturally but doesn't block our return.
+                    # Cancel queued futures outright. In-flight ones can't
+                    # be cancelled via Future.cancel, but setting
+                    # cancel_flag tells the Quartus runner to SIGTERM its
+                    # process group — so we return in seconds instead of
+                    # waiting out timeout_s per straggler.
                     for f in futures:
                         if not f.done():
                             f.cancel()
+                    early_exit = True
                     break
+
+            # Tear down the pool explicitly; cancel_flag + `_run`'s
+            # subprocess-group kill handle the in-flight work. Without
+            # this, the executor's daemon threads keep ->waiting on
+            # Python interpreter shutdown until their Popen's exit.
+            if early_exit:
+                _shutdown_executor(futures)
 
             summary = summarize(results, plan=plan)
             status = "passed" if best else "failed"
@@ -226,6 +238,10 @@ class Scheduler:
                 threads=threads_per_task,
                 timeout_s=timeout_s,
                 extra_assignments=extra_assignments,
+                # Shared cancellation signal so in-flight Quartus procs die
+                # promptly when the first passing seed triggers early exit,
+                # instead of burning the full timeout_s.
+                cancel_event=cancel_flag,
             )
             fut = ex.submit(self._run_one, task_id, spec, cancel_flag)
             futures.append(fut)
@@ -310,6 +326,22 @@ class Scheduler:
             self.on_event(kind, payload)
         except Exception:  # never let UI bugs kill a sweep
             log.exception("progress callback raised")
+
+
+def _shutdown_executor(futures: list[Future]) -> None:
+    """Wait up to a few seconds for in-flight futures, then give up.
+
+    `cancel_event` signals SIGTERM inside `_run`, so futures should
+    resolve in <10 s after early-exit. If one ignores the signal
+    (buggy Quartus wrapper, NFS stall), we don't want to block the
+    whole sweep — just return; the orphaned process group will be
+    reaped by the runner host.
+    """
+    import concurrent.futures as cf
+    try:
+        cf.wait(futures, timeout=15.0)
+    except Exception:  # pragma: no cover — purely defensive
+        log.exception("executor shutdown waited too long")
 
 
 def batch_run(

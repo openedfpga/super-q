@@ -1239,6 +1239,10 @@ def ci_build(
     pool: str = typer.Option("", "--pool"),
     backend: str = typer.Option("", "--backend"),
     target_slack: float = typer.Option(0.0, "--target-slack-ns"),
+    timeout: int = typer.Option(
+        15 * 60, "--seed-timeout",
+        help="Per-seed Quartus wall-clock cap (seconds). Scheduler SIGTERMs anything past this.",
+    ),
 ) -> None:
     """Run a sweep tuned for CI: annotations on stderr, JSON on stdout, GHA outputs."""
     from super_q.ci import annotate, detect, render_sweep_summary, set_output, summary_markdown
@@ -1252,7 +1256,8 @@ def ci_build(
     store = Store(paths().db_path)
 
     sched = Scheduler(store, be)
-    outcome = sched.run_sweep(core, plan, mode=mode, threads_per_task=threads)
+    outcome = sched.run_sweep(core, plan, mode=mode,
+                              threads_per_task=threads, timeout_s=timeout)
 
     set_output(env, "passed", "true" if outcome.best else "false")
     set_output(env, "best_seed", outcome.best.seed if outcome.best else "")
