@@ -71,6 +71,11 @@ class TimingReport:
 _SLACK_HEADER_RE = re.compile(
     r"^\s*;\s*(Clock|Clock Pair)\s*;\s*Slack\s*;", re.IGNORECASE
 )
+# Flexible section-header matchers: both "Worst-case Setup Slack" (21.x)
+# and "Setup Summary" (24.x) variants. The leading `;` + trailing whitespace
+# padding are optional so we catch unboxed and boxed versions alike.
+_SETUP_HEADER_RE = re.compile(r"(worst-case setup slack|(?<![a-z])setup summary(?![a-z]))")
+_HOLD_HEADER_RE = re.compile(r"(worst-case hold slack|(?<![a-z])hold summary(?![a-z]))")
 _SLACK_ROW_RE = re.compile(
     r"^\s*;\s*([^;]+?)\s*;\s*([+-]?\d+(?:\.\d+)?)\s*;.*$"
 )
@@ -102,20 +107,19 @@ def parse_sta_report(path: Path) -> TimingReport:
     for line in lines:
         low = line.strip().lower()
 
-        # Section detection — Quartus section headers are underlined with +---+.
-        if "worst-case setup slack" in low:
+        # Section detection — Quartus labels change between major releases.
+        # 21.x used "Worst-case Setup Slack" headers; 24.1 dropped that and
+        # uses "Setup Summary" / "Hold Summary" only. Match both shapes so
+        # a parser regression in either direction is impossible.
+        if _SETUP_HEADER_RE.search(low):
             current_section = "setup"
             in_fmax_table = False
             continue
-        if "worst-case hold slack" in low:
+        if _HOLD_HEADER_RE.search(low):
             current_section = "hold"
             in_fmax_table = False
             continue
-        if "fmax summary" in low:
-            current_section = "fmax"
-            in_fmax_table = True
-            continue
-        if "clock fmax summary" in low:
+        if "fmax summary" in low or "clock fmax summary" in low:
             current_section = "fmax"
             in_fmax_table = True
             continue
@@ -209,11 +213,25 @@ def parse_timing_json(path: Path) -> TimingReport | None:
 
 
 def merge_reports(primary: TimingReport, fallback: TimingReport | None) -> TimingReport:
-    """If parse_sta_report came up empty, prefer the JSON copy."""
+    """Prefer the structured JSON when present.
+
+    Previously we fell back to JSON only if the text-scraper came up
+    totally empty. That masked a bug where Quartus 24.1 changed the
+    STA panel header names and our regexes silently matched nothing
+    — every seed returned `passed=False` even when the bitstream was
+    fine. The TCL-emitted `timing.json` uses `::quartus::report`'s
+    panel API, which is stable across versions, so trust it first.
+    """
     if fallback is None:
         return primary
-    primary_has = primary.worst_setup_slack_ns is not None or primary.clocks
-    return primary if primary_has else fallback
+    fallback_has = (
+        fallback.worst_setup_slack_ns is not None
+        or fallback.clocks
+        or fallback.passed   # TCL dump_timing_json sets passed=True unconditionally until it proves otherwise
+    )
+    if fallback_has:
+        return fallback
+    return primary
 
 
 def _parse_float(s: str) -> float | None:
