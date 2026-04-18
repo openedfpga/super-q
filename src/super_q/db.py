@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 import uuid
 from collections.abc import Iterator
@@ -104,6 +105,12 @@ class Store:
             timeout=30.0,
         )
         self._conn.row_factory = sqlite3.Row
+        # Scheduler, worker pool, and CLI all share one Store instance and
+        # hit it from multiple threads. `BEGIN IMMEDIATE` would otherwise
+        # race between threads, producing `cannot start a transaction
+        # within a transaction`. An app-level lock serializes writers while
+        # WAL still lets readers through.
+        self._tx_lock = threading.RLock()
         with self._conn:
             # WAL lets concurrent readers (status, watch) coexist with the scheduler writer.
             self._conn.execute("PRAGMA journal_mode=WAL;")
@@ -115,13 +122,21 @@ class Store:
 
     @contextmanager
     def tx(self) -> Iterator[sqlite3.Connection]:
-        self._conn.execute("BEGIN IMMEDIATE;")
-        try:
-            yield self._conn
-            self._conn.execute("COMMIT;")
-        except Exception:
-            self._conn.execute("ROLLBACK;")
-            raise
+        with self._tx_lock:
+            # RLock handles the degenerate case where tx() ends up nested
+            # on the same thread. Inner BEGIN would fail outright, so we
+            # skip it (SAVEPOINT would be more correct but nothing in the
+            # codebase actually relies on nested transactions today).
+            if self._conn.in_transaction:
+                yield self._conn
+                return
+            self._conn.execute("BEGIN IMMEDIATE;")
+            try:
+                yield self._conn
+                self._conn.execute("COMMIT;")
+            except Exception:
+                self._conn.execute("ROLLBACK;")
+                raise
 
     def close(self) -> None:
         self._conn.close()
