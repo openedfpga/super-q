@@ -55,7 +55,8 @@ def _ensure_gh() -> None:
         )
 
 
-def _gh_api(path: str, *, method: str = "GET", data: dict | None = None) -> Any:
+def _gh_api(path: str, *, method: str = "GET", data: dict | None = None,
+            retries: int = 5) -> Any:
     _ensure_gh()
     cmd = ["gh", "api", path]
     if method != "GET":
@@ -63,13 +64,43 @@ def _gh_api(path: str, *, method: str = "GET", data: dict | None = None) -> Any:
     if data is not None:
         for k, v in data.items():
             cmd += ["-f", f"{k}={v}" if isinstance(v, str) else f"{k}={json.dumps(v)}"]
-    try:
-        out = subprocess.check_output(cmd, text=True, stderr=subprocess.PIPE)
-    except subprocess.CalledProcessError as e:
-        raise GhaError(f"gh api {method} {path} failed: {e.stderr.strip()[:400]}") from e
-    if not out:
-        return None
-    return json.loads(out)
+
+    # Transient failures (DNS blip, 502, secondary rate-limit) are common
+    # over the minutes-long polling sessions we do — a single unlucky call
+    # used to kill the whole `gha watch`. Exponential backoff, retry for
+    # anything that looks transient; propagate 4xx-style errors immediately.
+    import time as _t
+    attempt = 0
+    last_stderr = ""
+    while True:
+        try:
+            return json.loads(subprocess.check_output(
+                cmd, text=True, stderr=subprocess.PIPE,
+            ) or "null")
+        except subprocess.CalledProcessError as e:
+            last_stderr = (e.stderr or "").strip()
+            attempt += 1
+            if attempt > retries or not _is_transient(last_stderr):
+                raise GhaError(f"gh api {method} {path} failed: {last_stderr[:400]}") from e
+            _t.sleep(min(30.0, 2 ** attempt))
+
+
+_TRANSIENT_MARKERS = (
+    "error connecting to api.github.com",
+    "temporary failure in name resolution",
+    "timeout",
+    "connection reset",
+    "502 bad gateway",
+    "503 service unavailable",
+    "504 gateway timeout",
+    "rate limit",
+    "secondary rate limit",
+)
+
+
+def _is_transient(stderr: str) -> bool:
+    s = stderr.lower()
+    return any(m in s for m in _TRANSIENT_MARKERS)
 
 
 # ---------------------------------------------------------------------------
