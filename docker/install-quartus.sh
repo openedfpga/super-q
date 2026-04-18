@@ -44,8 +44,13 @@ EOF
     exit 2
 fi
 
+# Intel's CDN drops old build numbers when a new sub-release ships, so
+# the URL below drifts over time. If you see a 404, either:
+#   * bump the build number here after checking the current one at
+#     https://www.altera.com/downloads/fpga-development-tools/…
+#   * or set QUARTUS_URL to your own mirror (Tigris/R2/S3 signed URL).
 case "${VERSION}" in
-    24.1) DEFAULT_URL="https://downloads.intel.com/akdlm/software/acdsinst/24.1std/917/ib_tar/Quartus-lite-24.1std.0.917-linux.tar" ;;
+    24.1) DEFAULT_URL="https://downloads.intel.com/akdlm/software/acdsinst/24.1std/1077/ib_tar/Quartus-lite-24.1std.0.1077-linux.tar" ;;
     23.1) DEFAULT_URL="https://downloads.intel.com/akdlm/software/acdsinst/23.1std/991/ib_tar/Quartus-lite-23.1std.0.991-linux.tar" ;;
     *) echo "unsupported Quartus version: ${VERSION}" >&2; exit 2 ;;
 esac
