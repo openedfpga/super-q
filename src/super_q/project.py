@@ -223,23 +223,62 @@ def _extract_device(qsf: Path) -> str:
 
 
 def _find_sdc_files(quartus_dir: Path) -> list[Path]:
-    sdcs: list[Path] = []
-    for d in (quartus_dir, quartus_dir.parent, quartus_dir / "constraints"):
+    """Locate .sdc timing-constraint files anywhere the core might keep them.
+
+    Pocket cores commonly split constraints into per-subsystem folders
+    (e.g. `apf/apf_constraints.sdc`, `core/core_constraints.sdc`), so we
+    walk one level of children in addition to the obvious locations.
+    """
+    sdcs: set[Path] = set()
+    candidates: list[Path] = [
+        quartus_dir,
+        quartus_dir.parent,
+        quartus_dir / "constraints",
+        quartus_dir / "sdc",
+    ]
+    for d in candidates:
         if d.exists():
-            sdcs.extend(sorted(d.glob("*.sdc")))
-    return sdcs
+            sdcs.update(d.glob("*.sdc"))
+    # One level of child dirs under quartus_dir (apf/, core/, rtl/, …).
+    if quartus_dir.exists():
+        for child in quartus_dir.iterdir():
+            if child.is_dir() and not child.name.startswith(("_", ".")):
+                sdcs.update(child.glob("*.sdc"))
+    return sorted(sdcs)
 
 
 _AUTHOR_NAME_RE = re.compile(r"^([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$")
 
 
 def _guess_author_name(root: Path) -> tuple[str, str]:
-    """Pocket cores ship under `Cores/<Author>.<Name>/`. If the repo dir
-    follows that convention, use it. Otherwise fall back to the repo name.
+    """Identify (<Author>, <Name>) for this repo.
+
+    Three strategies, in priority order:
+      1. The canonical `dist/Cores/<Author>.<Name>/` folder. This is
+         authoritative when present because it's the path the Pocket
+         loader itself uses.
+      2. The repo dirname, if it follows the `Author.Name` convention.
+      3. Anything else → `("unknown", <dirname>)` so we still have
+         *something* to label the core by.
     """
+    # (1) dist/Cores/<Author>.<Name>/
+    dist_cores = root / "dist" / "Cores"
+    if dist_cores.is_dir():
+        candidates = [
+            p for p in dist_cores.iterdir()
+            if p.is_dir() and _AUTHOR_NAME_RE.match(p.name)
+        ]
+        if len(candidates) == 1:
+            author, name = candidates[0].name.split(".", 1)
+            return author, name
+        # Multiple cores under one repo: we don't try to guess.
+
+    # (2) repo dirname
     m = _AUTHOR_NAME_RE.match(root.name)
     if m:
         return m.group(1), m.group(2)
+
+    # (3) fall back
     return "unknown", root.name
 
 

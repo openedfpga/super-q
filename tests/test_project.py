@@ -39,3 +39,31 @@ def test_find_cores_over_parent(fake_core: Path):
     cores = find_cores([fake_core.parent])
     assert len(cores) == 1
     assert cores[0].project_name == "pocket"
+
+
+def test_author_name_from_dist_cores(tmp_path: Path):
+    """Repo dirname doesn't follow Author.Name but dist/Cores/ does."""
+    root = tmp_path / "openFPGA-Popeye"
+    (root / "src" / "fpga").mkdir(parents=True)
+    (root / "src" / "fpga" / "ap_core.qpf").write_text("")
+    (root / "dist" / "Cores" / "ericlewis.Popeye").mkdir(parents=True)
+
+    core = detect_core(root)
+    assert core.author == "ericlewis"
+    assert core.core_name == "Popeye"
+    assert core.full_name == "ericlewis.Popeye"
+    assert core.project_name == "ap_core"
+
+
+def test_sdc_walks_subdirs(tmp_path: Path):
+    """SDC files in common Pocket subdirs (apf/, core/) should be found."""
+    root = tmp_path / "proj"
+    fpga = root / "src" / "fpga"
+    (fpga / "apf").mkdir(parents=True)
+    (fpga / "core").mkdir()
+    (fpga / "ap_core.qpf").write_text("")
+    (fpga / "apf" / "apf_constraints.sdc").write_text("")
+    (fpga / "core" / "core_constraints.sdc").write_text("")
+    core = detect_core(root)
+    names = sorted(p.name for p in core.sdc_files)
+    assert names == ["apf_constraints.sdc", "core_constraints.sdc"]
