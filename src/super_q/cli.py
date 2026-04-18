@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -969,6 +970,212 @@ def init_cmd(
             f"  # push to GitHub, then tag a release:\n"
             f"  git tag v{version} && git push --tags"
         )
+
+
+gha_app = typer.Typer(no_args_is_help=True, help="GitHub Actions helpers (list runs, watch, trigger, download).")
+app.add_typer(gha_app, name="gha")
+
+
+@gha_app.command("runs")
+def gha_runs(
+    repo: str = typer.Option("", "--repo", help="owner/repo (auto-detected from `git remote` if omitted)"),
+    workflow: str = typer.Option("", "--workflow", help="Filter to a single workflow (e.g. build.yml)"),
+    limit: int = typer.Option(10, "--limit"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List recent workflow runs for a repo."""
+    from super_q.gha import GhaError, detect_repo, list_runs
+
+    repo = repo or (detect_repo() or "")
+    if not repo:
+        err_console.print("[red]couldn't detect repo; pass --repo owner/name[/red]")
+        raise typer.Exit(1)
+
+    try:
+        runs = list_runs(repo, workflow=workflow or None, limit=limit)
+    except GhaError as e:
+        err_console.print(f"[red]{e}[/red]")
+        raise typer.Exit(2)
+
+    if as_json:
+        _echo_json({"repo": repo, "runs": [r.as_dict() for r in runs]})
+        return
+
+    t = Table(title=f"{repo} · {len(runs)} recent runs")
+    for c in ("id", "name", "status", "conclusion", "event", "branch", "duration"):
+        t.add_column(c)
+    for r in runs:
+        dur = f"{r.duration_s:.0f}s" if r.duration_s else "—"
+        conclusion_style = {
+            "success": "green", "failure": "red", "cancelled": "yellow",
+        }.get(r.conclusion or "", "white")
+        t.add_row(
+            str(r.id), r.name,
+            r.status,
+            f"[{conclusion_style}]{r.conclusion or '—'}[/{conclusion_style}]",
+            r.event, r.branch, dur,
+        )
+    console.print(t)
+
+
+@gha_app.command("watch")
+def gha_watch(
+    run_id: int = typer.Argument(0, help="Run id (defaults to latest build.yml run)"),
+    repo: str = typer.Option("", "--repo"),
+    workflow: str = typer.Option("build.yml", "--workflow"),
+    interval: float = typer.Option(5.0, "--interval", help="Poll interval in seconds"),
+    timeout: int = typer.Option(60 * 60 * 2, "--timeout", help="Give up after N seconds"),
+    as_json: bool = typer.Option(False, "--json", help="Emit one JSON line per update"),
+) -> None:
+    """Poll a GHA run until it finishes; show real-time job/step status."""
+    from super_q.gha import GhaError, detect_repo, get_run, list_runs, watch_run
+
+    repo = repo or (detect_repo() or "")
+    if not repo:
+        err_console.print("[red]couldn't detect repo; pass --repo owner/name[/red]")
+        raise typer.Exit(1)
+
+    try:
+        if run_id == 0:
+            runs = list_runs(repo, workflow=workflow, limit=1)
+            if not runs:
+                err_console.print(f"[red]no runs found for {workflow}[/red]")
+                raise typer.Exit(1)
+            run_id = runs[0].id
+            if not as_json:
+                console.print(f"[dim]watching latest {workflow} run: {run_id}[/dim]")
+
+        if as_json:
+            final = watch_run(repo, run_id,
+                              poll_s=interval, timeout_s=timeout,
+                              on_update=lambda u: _echo_json(u))
+            _echo_json({"final": final.as_dict()})
+        else:
+            final = _watch_with_rich(repo, run_id, interval, timeout)
+    except GhaError as e:
+        err_console.print(f"[red]{e}[/red]")
+        raise typer.Exit(2)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]stopped watching; run still in flight[/yellow]")
+        raise typer.Exit(0)
+
+    # Exit code mirrors the run's conclusion so callers can chain.
+    if final.conclusion == "success":
+        raise typer.Exit(0)
+    if final.conclusion in (None, "cancelled"):
+        raise typer.Exit(4)
+    raise typer.Exit(3)
+
+
+def _watch_with_rich(repo: str, run_id: int, interval: float, timeout: int):
+    """Live rich-table watcher. Rebuilds the whole table on each update."""
+    from rich.live import Live
+
+    from super_q.gha import watch_run
+
+    def build_table(update: dict) -> Table:
+        run = update["run"]
+        t = Table(
+            title=f"{repo} · run {run['id']} · {run['name']}  "
+                  f"[dim]elapsed {update['elapsed_s']}s[/dim]",
+            show_lines=False, expand=True,
+        )
+        for c in ("job", "status", "conclusion", "current step", "started"):
+            t.add_column(c)
+        for j in update["jobs"]:
+            status_style = {
+                "queued": "dim", "in_progress": "yellow",
+                "completed": "bold",
+            }.get(j["status"], "white")
+            conc_style = {
+                "success": "green", "failure": "red",
+                "cancelled": "yellow", "skipped": "dim",
+            }.get(j["conclusion"] or "", "white")
+            t.add_row(
+                j["name"] or "—",
+                f"[{status_style}]{j['status']}[/{status_style}]",
+                f"[{conc_style}]{j['conclusion'] or '—'}[/{conc_style}]",
+                j["current_step"] or "—",
+                (j["started_at"] or "—")[-8:] if j["started_at"] else "—",
+            )
+        if not update["jobs"]:
+            t.caption = f"run status: {run['status']}"
+        return t
+
+    with Live(console=console, refresh_per_second=2) as live:
+        def _update(u: dict) -> None:
+            live.update(build_table(u))
+
+        final = watch_run(repo, run_id, poll_s=interval, timeout_s=timeout, on_update=_update)
+
+    color = {
+        "success": "green bold", "failure": "red bold",
+        "cancelled": "yellow", "timed_out": "yellow",
+    }.get(final.conclusion or "", "white")
+    console.print(
+        f"\n[{color}]{(final.conclusion or 'unknown').upper()}[/] "
+        f"· duration {final.duration_s:.0f}s · {final.url}"
+    )
+    return final
+
+
+@gha_app.command("trigger")
+def gha_trigger(
+    workflow: str = typer.Option("build.yml", "--workflow"),
+    repo: str = typer.Option("", "--repo"),
+    ref: str = typer.Option("main", "--ref"),
+    watch: bool = typer.Option(False, "--watch", help="Block on the new run until it finishes"),
+) -> None:
+    """Fire a workflow_dispatch on a repo. Optionally watch the new run."""
+    from super_q.gha import GhaError, detect_repo, trigger_workflow
+
+    repo = repo or (detect_repo() or "")
+    if not repo:
+        err_console.print("[red]couldn't detect repo; pass --repo owner/name[/red]")
+        raise typer.Exit(1)
+
+    try:
+        run_id = trigger_workflow(repo, workflow, ref=ref)
+    except GhaError as e:
+        err_console.print(f"[red]{e}[/red]")
+        raise typer.Exit(2)
+
+    console.print(f"[green]triggered[/green] {workflow} @ {ref} → run {run_id}")
+    console.print(f"  https://github.com/{repo}/actions/runs/{run_id}")
+    if watch:
+        gha_watch(run_id=int(run_id), repo=repo, workflow=workflow,
+                 interval=5.0, timeout=60 * 60 * 2, as_json=False)
+
+
+@gha_app.command("download")
+def gha_download(
+    run_id: int = typer.Argument(..., help="Run id whose artifacts to pull"),
+    repo: str = typer.Option("", "--repo"),
+    out_dir: Path = typer.Option(Path("gha-artifacts"), "--out"),
+    name: str = typer.Option("", "--name", help="Only this artifact name"),
+) -> None:
+    """Download all artifacts from a run (wraps `gh run download`)."""
+    from super_q.gha import GhaError, detect_repo, download_artifacts
+
+    repo = repo or (detect_repo() or "")
+    if not repo:
+        err_console.print("[red]couldn't detect repo; pass --repo owner/name[/red]")
+        raise typer.Exit(1)
+
+    try:
+        paths = download_artifacts(repo, run_id, out_dir, name=name)
+    except GhaError as e:
+        err_console.print(f"[red]{e}[/red]")
+        raise typer.Exit(2)
+    except subprocess.CalledProcessError as e:
+        err_console.print(f"[red]gh run download failed: rc={e.returncode}[/red]")
+        raise typer.Exit(2)
+
+    console.print(f"[green]✓ downloaded {len(paths)} files → {out_dir}[/green]")
+    for p in paths[:10]:
+        console.print(f"  {p.relative_to(out_dir.parent) if out_dir in p.parents else p}")
+    if len(paths) > 10:
+        console.print(f"  ... and {len(paths) - 10} more")
 
 
 release_app = typer.Typer(no_args_is_help=True, help="Package a Pocket release zip.")
