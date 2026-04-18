@@ -524,8 +524,20 @@ jobs:
       - name: Install super-q
         run: pip install "{super_q_pip}"
 
-      # Quartus install is 21 GB unpacked; GHA's / only has ~14 GB free.
-      # Symlink /opt/intelFPGA_lite onto the ~65 GB /mnt scratch disk.
+      # Reclaim ~25 GB by wiping preinstalled toolchains we'll never use,
+      # and install Quartus to /mnt (the ~65 GB scratch disk) since the
+      # installer needs 21 GB unpacked.
+      - name: Free runner disk
+        run: |
+          set -eux
+          sudo rm -rf \
+            /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+            /usr/local/share/chromium /usr/local/share/powershell \
+            /usr/local/lib/node_modules || true
+          sudo docker system prune -af 2>/dev/null || true
+          sudo apt-get -y autoremove --purge >/dev/null || true
+
       - name: Prepare large-disk location for Quartus
         run: |
           set -euxo pipefail
@@ -612,8 +624,20 @@ jobs:
       - name: Install super-q
         run: pip install "{super_q_pip}"
 
-      # Quartus install is 21 GB unpacked; GHA's / only has ~14 GB free.
-      # Symlink /opt/intelFPGA_lite onto the ~65 GB /mnt scratch disk.
+      # Reclaim ~25 GB by wiping preinstalled toolchains we'll never use,
+      # and install Quartus to /mnt (the ~65 GB scratch disk) since the
+      # installer needs 21 GB unpacked.
+      - name: Free runner disk
+        run: |
+          set -eux
+          sudo rm -rf \
+            /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+            /usr/local/share/chromium /usr/local/share/powershell \
+            /usr/local/lib/node_modules || true
+          sudo docker system prune -af 2>/dev/null || true
+          sudo apt-get -y autoremove --purge >/dev/null || true
+
       - name: Prepare large-disk location for Quartus
         run: |
           set -euxo pipefail

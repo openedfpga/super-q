@@ -72,17 +72,34 @@ mkdir -p "${PREFIX}"
     --installdir "${PREFIX}" \
     --disable-components quartus_help
 
-# Trim obvious fat to keep the cache under GHA's 10 GB ceiling.
-# We keep Cyclone V (Pocket target) and drop everything else.
+# --------------------------------------------------------------------------
+# Aggressive trim.
+#
+# Pocket cores only compile for Cyclone V 5CEBA4F23C8 via headless
+# quartus_sh. Everything else (simulators, HLS, NiosII, non-Cyclone-V
+# devices, docs, PDFs) is shipping weight we pay at cache-restore time
+# but never use. Strip it out now so the cache is ~5 GB instead of
+# ~15 GB, and so the 10 GB GHA cache ceiling isn't in play.
+# --------------------------------------------------------------------------
 QUARTUS_DIR="${PREFIX}/quartus"
-if [ -d "${QUARTUS_DIR}/eda" ]; then
-    rm -rf "${QUARTUS_DIR}/eda"
-fi
-find "${QUARTUS_DIR}" -type d -name 'uninstall'    -prune -exec rm -rf {} + || true
-find "${PREFIX}"      -type f -name '*.log'        -delete || true
-find "${PREFIX}"      -type d -name '.pfinst-*'    -prune -exec rm -rf {} + || true
+echo "pre-trim size: $(du -sh "${PREFIX}" 2>/dev/null | cut -f1)"
 
-# Keep only Cyclone V device libraries (Pocket is 5CEBA4F23C8).
+# Siblings of quartus/ we don't need.
+for sib in nios2eds niosv modelsim_ase modelsim_ae questa_fse questa_fe \
+           hls hld embedded ip_compiler uninstall logs; do
+    rm -rf "${PREFIX}/${sib}" 2>/dev/null || true
+done
+
+# Quartus subtrees we don't need. `eda/` is simulation-glue; `sopc_builder/`
+# and `dni/` are Qsys; GUI help/docs/pdf are wasted bytes on a headless
+# runner; `megafunctions/examples` and `libraries/vhdl` templates aren't
+# used by our compile flow.
+for sub in eda sopc_builder dni docs help examples pgmparts \
+           common/help common/devinfo_html common/pkgdb; do
+    rm -rf "${QUARTUS_DIR}/${sub}" 2>/dev/null || true
+done
+
+# Only Cyclone V device libraries are needed (Pocket is 5CEBA4F23C8).
 if [ -d "${QUARTUS_DIR}/common/devinfo" ]; then
     pushd "${QUARTUS_DIR}/common/devinfo" >/dev/null
     for d in */; do
@@ -94,5 +111,30 @@ if [ -d "${QUARTUS_DIR}/common/devinfo" ]; then
     popd >/dev/null
 fi
 
+# linux/ has per-tool binary folders; we only ever call quartus_sh /
+# quartus_fit / quartus_syn / quartus_sta / quartus_asm / quartus_cpf
+# / quartus_map from our flow. Keep them, toss the rest.
+if [ -d "${QUARTUS_DIR}/linux64" ]; then
+    pushd "${QUARTUS_DIR}/linux64" >/dev/null
+    for f in quartus_*; do
+        case "$f" in
+            quartus_sh|quartus_fit|quartus_syn|quartus_sta|quartus_asm| \
+            quartus_cpf|quartus_map|quartus_cdb|quartus_drc|quartus_eda| \
+            quartus_pow|quartus_si|quartus_tan|quartus_jli|quartus_jbcc| \
+            quartus_npp|quartus_stp) ;;
+            quartus_pgm*|quartus_pgmw*|quartus_gui*|quartus_help*|quartus_ipgenerate*) \
+                rm -f "$f" || true ;;
+        esac
+    done
+    popd >/dev/null
+fi
+
+find "${QUARTUS_DIR}" -type d -name 'uninstall'    -prune -exec rm -rf {} + 2>/dev/null || true
+find "${PREFIX}"      -type f -name '*.log'        -delete 2>/dev/null || true
+find "${PREFIX}"      -type f \( -name '*.pdf' -o -name '*.html' -o -name '*.htm' \) \
+    -delete 2>/dev/null || true
+find "${PREFIX}"      -type d -name '.pfinst-*'    -prune -exec rm -rf {} + 2>/dev/null || true
+
+echo "post-trim size: $(du -sh "${PREFIX}" 2>/dev/null | cut -f1)"
 echo "quartus ${VERSION} installed at ${PREFIX}"
 "${SH}" --version 2>/dev/null | head -1 || true

@@ -111,11 +111,29 @@ jobs:
               libxrender1 libxtst6 libxi6 libfreetype6 \
               rsync zip
 
-      # GHA ubuntu-22.04 runners have ~14 GB free on / but ~65 GB on /mnt.
-      # Quartus needs 21 GB unpacked, so we install to /mnt and symlink
-      # /opt/intelFPGA_lite → /mnt/intelFPGA_lite before both restore and
-      # install. The cache step follows the symlink, so subsequent cache
-      # hits just unpack to /mnt again transparently.
+      # Scrub the GHA ubuntu-22.04 runner. The preinstalled toolchains
+      # (dotnet, android SDK, CodeQL, Haskell, Boost, Chromium) eat ~25 GB
+      # on / we'll never use. We also install Quartus to /mnt (the ~65 GB
+      # scratch disk) because it needs 21 GB unpacked and the trimmed
+      # result is still ~5 GB — too big for / on its own.
+      - name: Free runner disk
+        run: |
+          set -euxo pipefail
+          echo "=== before ==="; df -h / /mnt
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost \
+            /usr/local/share/chromium \
+            /usr/local/share/powershell \
+            /usr/local/lib/node_modules || true
+          sudo docker system prune -af 2>/dev/null || true
+          sudo apt-get -y autoremove --purge >/dev/null || true
+          sudo apt-get -y clean >/dev/null || true
+          echo "=== after ==="; df -h / /mnt
+
       - name: Prepare large-disk location for Quartus
         run: |
           set -euxo pipefail
@@ -156,7 +174,10 @@ jobs:
           echo "/opt/intelFPGA_lite/${{ inputs.quartus-version }}/quartus/bin" >> "$GITHUB_PATH"
 
       - name: superq info
-        run: superq info
+        run: |
+          superq info
+          echo "=== disk after install ==="; df -h / /mnt
+          echo "=== quartus size ==="; du -sh /mnt/intelFPGA_lite/${{ inputs.quartus-version }} 2>/dev/null || true
 
       - name: Run seed sweep
         id: sweep
