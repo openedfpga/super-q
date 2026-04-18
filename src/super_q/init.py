@@ -551,9 +551,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /mnt/intelFPGA_lite/24.1
-          key: quartus-24.1-v4-slim
+          key: quartus-24.1-v5-slim
           restore-keys: |
-            quartus-24.1-v4-
+            quartus-24.1-v5-
 
       - name: Install Quartus (on cache miss)
         if: steps.cache.outputs.cache-hit != 'true'
@@ -651,9 +651,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /mnt/intelFPGA_lite/24.1
-          key: quartus-24.1-v4-slim
+          key: quartus-24.1-v5-slim
           restore-keys: |
-            quartus-24.1-v4-
+            quartus-24.1-v5-
 
       - name: Install Quartus (on cache miss)
         if: steps.cache.outputs.cache-hit != 'true'

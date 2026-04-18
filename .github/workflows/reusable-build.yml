@@ -147,9 +147,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /mnt/intelFPGA_lite/${{ inputs.quartus-version }}
-          key: quartus-${{ inputs.quartus-version }}-v4-slim
+          key: quartus-${{ inputs.quartus-version }}-v5-slim
           restore-keys: |
-            quartus-${{ inputs.quartus-version }}-v4-
+            quartus-${{ inputs.quartus-version }}-v5-
 
       # Install super-q first so its bundled install-quartus.sh is available
       # without touching GitHub again. This is also what makes private-repo

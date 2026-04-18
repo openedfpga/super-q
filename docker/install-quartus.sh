@@ -92,9 +92,13 @@ done
 
 # Quartus subtrees we don't need. `eda/` is simulation-glue; `sopc_builder/`
 # and `dni/` are Qsys; GUI help/docs/pdf are wasted bytes on a headless
-# runner; `megafunctions/examples` and `libraries/vhdl` templates aren't
-# used by our compile flow.
-for sub in eda sopc_builder dni docs help examples pgmparts \
+# runner.
+#
+# DO NOT remove `pgmparts/` — the assembler (quartus_asm) loads the parts
+# database from there to emit bitstreams. Removing it produces a runtime
+# crash in PGMIO_DEVICE_MANAGER::lookup_device during asm_write_device_file
+# and kills every seed with rc=3. (Learned the hard way on Popeye.)
+for sub in eda sopc_builder dni docs help examples \
            common/help common/devinfo_html common/pkgdb; do
     rm -rf "${QUARTUS_DIR}/${sub}" 2>/dev/null || true
 done
