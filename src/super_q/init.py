@@ -57,8 +57,8 @@ class InitOptions:
     force: bool = False                    # overwrite existing files
     git_init: bool = True                   # run `git init` after scaffold
     platform_ids: list[str] = field(default_factory=list)
-    default_seeds_build: str = "1-8"
-    default_seeds_release: str = "1-32"
+    default_seeds_build: str = "1-16"       # PR-level regression sweep
+    default_seeds_release: str = "1-64"     # thorough search before shipping
     inline: bool = False                    # embed workflow steps inline
                                             #   (no external `uses:` reference)
     super_q_pip: str = ""                   # pip install target for inline mode

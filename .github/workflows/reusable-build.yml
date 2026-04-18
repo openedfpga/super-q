@@ -27,12 +27,12 @@ on:
         type: string
         default: "."
       seeds:
-        description: Seed range (e.g. "1-8") or single seed.
+        description: Seed range (e.g. "1-16") or single seed.
         required: false
         type: string
-        default: "1-8"
+        default: "1-16"
       parallel:
-        description: Concurrent seeds.
+        description: Concurrent seeds (4 is the ceiling on GHA's 16 GB runners before OOM).
         required: false
         type: number
         default: 4
