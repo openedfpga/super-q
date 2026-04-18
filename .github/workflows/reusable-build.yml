@@ -137,24 +137,23 @@ jobs:
 
       - name: Run seed sweep
         id: sweep
+        # `superq ci build --min --max` handles both ranges and single
+        # seeds uniformly (min==max collapses the sweep to one seed) and
+        # writes GITHUB_OUTPUT for us, so no ad-hoc JSON parsing in bash.
         run: |
           SEEDS="${{ inputs.seeds }}"
           if [[ "$SEEDS" == *-* ]]; then
             MIN="${SEEDS%-*}"
             MAX="${SEEDS#*-}"
-            superq ci build "${{ inputs.core-path }}" \
-              --min="$MIN" --max="$MAX" \
-              --parallel="${{ inputs.parallel }}" \
-              --mode="${{ inputs.mode }}" \
-              --target-slack-ns="${{ inputs.target-slack-ns }}"
           else
-            superq build "${{ inputs.core-path }}" --seed="$SEEDS" --json | tee build.json
-            python -c 'import json,sys,os;d=json.load(open("build.json"));b=d.get("best") or {};
-open(os.environ["GITHUB_OUTPUT"], "a").write(
-  f"passed={\"true\" if d.get(\"best\") else \"false\"}\n"
-  f"best_seed={b.get(\"seed\",\"\")}\n"
-  f"rbf_r_path={b.get(\"rbf_r_path\",\"\")}\n")'
+            MIN="$SEEDS"
+            MAX="$SEEDS"
           fi
+          superq ci build "${{ inputs.core-path }}" \
+            --min="$MIN" --max="$MAX" \
+            --parallel="${{ inputs.parallel }}" \
+            --mode="${{ inputs.mode }}" \
+            --target-slack-ns="${{ inputs.target-slack-ns }}"
 
       - name: Build summary
         if: always() && steps.sweep.outputs.passed == 'true'

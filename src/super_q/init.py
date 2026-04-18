@@ -549,10 +549,13 @@ jobs:
 
       - name: Seed sweep
         run: |
-          superq ci build . \\
-            --min="$(echo '{seeds_build}' | cut -d- -f1)" \\
-            --max="$(echo '{seeds_build}' | cut -d- -f2)" \\
-            --parallel=4 --mode=split-fit
+          SEEDS="{seeds_build}"
+          if [[ "$SEEDS" == *-* ]]; then
+            MIN="${{SEEDS%-*}}"; MAX="${{SEEDS#*-}}"
+          else
+            MIN="$SEEDS"; MAX="$SEEDS"
+          fi
+          superq ci build . --min="$MIN" --max="$MAX" --parallel=4 --mode=split-fit
 
       - name: Upload bitstream
         if: success()
@@ -634,10 +637,13 @@ jobs:
 
       - name: Seed sweep
         run: |
-          superq ci build . \\
-            --min="$(echo '{seeds_release}' | cut -d- -f1)" \\
-            --max="$(echo '{seeds_release}' | cut -d- -f2)" \\
-            --parallel=4 --mode=split-fit
+          SEEDS="{seeds_release}"
+          if [[ "$SEEDS" == *-* ]]; then
+            MIN="${{SEEDS%-*}}"; MAX="${{SEEDS#*-}}"
+          else
+            MIN="$SEEDS"; MAX="$SEEDS"
+          fi
+          superq ci build . --min="$MIN" --max="$MAX" --parallel=4 --mode=split-fit
 
       - name: Locate bitstream
         id: bits
