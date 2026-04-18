@@ -48,9 +48,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/super_q"]
 
-[tool.hatch.build.targets.wheel.shared-data]
+# Ship the shell helpers + TCL wrappers alongside the Python code so
+# pip-installed super-q has everything it needs without touching GitHub.
+[tool.hatch.build.targets.wheel.force-include]
 "tcl" = "super_q/tcl"
-"scripts/rbf_reverse.py" = "super_q/scripts/rbf_reverse.py"
+"docker/install-quartus.sh" = "super_q/_resources/install_quartus.sh"
 
 [tool.ruff]
 line-length = 110

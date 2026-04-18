@@ -113,6 +113,60 @@ with:
 A draft release is created with the zip attached; open it in the
 Releases UI and click Publish to flip it live.
 
+## Private repos
+
+**Your core repo private**: no problem. The reusable workflow runs on a
+GHA runner and uses the per-run `GITHUB_TOKEN` — no interactive login,
+no extra secrets.
+
+**super-q (the reusable-workflow provider) private**: three scenarios:
+
+1. **super-q in the same user or org as your core** — works with one
+   toggle. Open the super-q repo's Settings → Actions → General →
+   "Access" and pick "Accessible from repositories owned by the user"
+   (or the org-level equivalent).
+
+2. **super-q private in a different user/org than your core** — GitHub
+   refuses the `uses:` cross-repo reference, and the `curl` that used to
+   pull `install-quartus.sh` would also fail on raw.githubusercontent.com.
+   Use the inline mode instead (see below).
+
+3. **super-q public** — no setup.
+
+## Inline workflows (fully private, zero cross-repo access)
+
+`superq init --inline` generates workflows that **do not** reference
+super-q as a reusable workflow. They pip-install super-q directly and
+call it from the steps themselves. Everything lives in your own repo;
+no external access grants are needed.
+
+```bash
+# For a brand-new core repo:
+superq init alice.my-core --inline
+
+# To switch an existing repo from reusable to inline:
+superq init alice.my-core --inline --ci-only --force
+
+# Private super-q fork? Point --super-q-pip at it:
+superq init alice.my-core --inline \
+    --super-q-pip 'super-q @ git+https://x-access-token:${GH_TOKEN}@github.com/myorg/super-q@main'
+```
+
+The inline workflow does everything the reusable one does (apt, Quartus
+cache, super-q install, seed sweep, artifact upload, release packaging)
+— it's just all spelled out in your repo instead of farmed out. Trade-
+off: you need to re-run `superq init --inline --force` to pull in super-q
+updates, versus floating on `@main`.
+
+| mode                  | length | needs cross-repo access | auto-updates |
+|-----------------------|-------:|:-----------------------:|:------------:|
+| `superq init`          | ~20 lines | yes (reusable workflow) | yes        |
+| `superq init --inline` | ~80 lines | no                      | no         |
+
+If super-q is private and lives in the same user/org, stick with the
+default (reusable). Use `--inline` only when you actually need the
+isolation — cross-org private, or you want a frozen snapshot.
+
 ## Pinning super-q
 
 By default workflows pull super-q from `main`. To pin:

@@ -385,21 +385,58 @@ def mcp_cmd() -> None:
 @app.command("install-quartus")
 def install_quartus_cmd(
     version: str = typer.Option("24.1", "--version"),
-    target: Path = typer.Option(Path.home() / "intelFPGA_lite", "--target"),
+    accept_eula: bool = typer.Option(
+        False, "--accept-eula",
+        help="Attests you've read Intel's license at "
+             "https://www.intel.com/content/www/us/en/legal/end-user-license-agreement.html",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run",
+                                  help="Print the installer path + exit"),
 ) -> None:
-    """Print (and optionally run) the command to install Quartus Lite.
+    """Download + install Quartus Lite into `/opt/intelFPGA_lite/<ver>/`.
 
-    We don't bundle Intel's installer — it's big and gated by the EULA.
-    What we *can* do is tell you exactly what to run; the included
-    scripts/install-quartus.sh is idempotent.
+    Runs the bundled, idempotent installer — a no-op if the target is
+    already populated (i.e. via `actions/cache`). Designed to be called
+    from CI and from local workstations alike.
     """
-    install_sh = Path(__file__).resolve().parent.parent.parent / "scripts" / "install-quartus.sh"
-    if not install_sh.exists():
-        install_sh = Path(__file__).resolve().parent / "scripts" / "install-quartus.sh"
-    console.print(
-        f"Run: [bold]bash {install_sh} --version={version} --target={target}[/bold]\n"
-        "\nThis downloads Quartus Lite with Cyclone V support, accepts EULA,\n"
-        "and writes $QUARTUS_ROOTDIR to ~/.superq/env.\n"
+    import os
+    import subprocess
+
+    # The script ships inside the wheel at super_q/_resources/install_quartus.sh.
+    # We locate it via importlib so it works regardless of install method.
+    installer = _locate_bundled_installer()
+
+    if dry_run:
+        console.print(f"installer: {installer}")
+        raise typer.Exit(0)
+
+    if not accept_eula:
+        err_console.print(
+            "[red]must pass --accept-eula[/red] — read Intel's license first at:\n"
+            "  https://www.intel.com/content/www/us/en/legal/end-user-license-agreement.html"
+        )
+        raise typer.Exit(1)
+
+    env = os.environ.copy()
+    env["SUPERQ_ACCEPT_EULA"] = "1"
+    env["QUARTUS_VERSION"] = version
+    rc = subprocess.call(["bash", str(installer), version], env=env)
+    raise typer.Exit(rc)
+
+
+def _locate_bundled_installer() -> Path:
+    """Find `install_quartus.sh` inside the installed package."""
+    # Package-installed (via pip/wheel): super_q/_resources/install_quartus.sh
+    pkg_path = Path(__file__).resolve().parent / "_resources" / "install_quartus.sh"
+    if pkg_path.exists():
+        return pkg_path
+    # Editable checkout: fall back to repo-root docker/install-quartus.sh
+    repo_path = Path(__file__).resolve().parent.parent.parent / "docker" / "install-quartus.sh"
+    if repo_path.exists():
+        return repo_path
+    raise RuntimeError(
+        "install-quartus.sh not found alongside super-q. "
+        "Reinstall with `pip install --force-reinstall super-q`."
     )
 
 
@@ -833,6 +870,17 @@ def init_cmd(
         False, "--ci-only",
         help="Only write .github/workflows — for adding super-q to an existing core repo.",
     ),
+    inline: bool = typer.Option(
+        False, "--inline",
+        help="Emit self-contained workflow steps (no `uses:` to super-q). "
+             "Use this when super-q lives in a private repo you can't share, "
+             "or when you want to pin to a specific super-q commit.",
+    ),
+    super_q_pip: str = typer.Option(
+        "", "--super-q-pip",
+        help="pip install target for --inline mode (e.g. a private git URL). "
+             "Defaults to `super-q @ git+https://github.com/super-q/super-q@<ref>`.",
+    ),
     seeds_build: str = typer.Option("1-8", "--seeds-build"),
     seeds_release: str = typer.Option("1-32", "--seeds-release"),
     force: bool = typer.Option(False, "--force", help="Overwrite existing files"),
@@ -884,6 +932,8 @@ def init_cmd(
             git_init=not no_git,
             default_seeds_build=seeds_build,
             default_seeds_release=seeds_release,
+            inline=inline,
+            super_q_pip=super_q_pip,
         )
         result = scaffold(opts)
     except InitError as e:

@@ -110,33 +110,27 @@ jobs:
           restore-keys: |
             quartus-${{ inputs.quartus-version }}-
 
+      # Install super-q first so its bundled install-quartus.sh is available
+      # without touching GitHub again. This is also what makes private-repo
+      # use work — we never curl from raw.githubusercontent.com.
+      - name: Install super-q
+        run: |
+          pip install --upgrade pip
+          pip install "super-q @ git+https://github.com/super-q/super-q@${{ inputs.super-q-ref }}"
+
       - name: Download + install Quartus (on cache miss)
         if: steps.cache.outputs.cache-hit != 'true'
         env:
-          SUPERQ_ACCEPT_EULA: "1"                # CI operator attests EULA
           QUARTUS_URL: ${{ secrets.QUARTUS_URL }}
-          QUARTUS_VERSION: ${{ inputs.quartus-version }}
         run: |
-          set -euxo pipefail
-          # Pull the idempotent installer script from super-q. We curl
-          # it here so we don't need to pip-install super-q before the
-          # Quartus layer is cached.
-          curl -fsSL -o /tmp/install-quartus.sh \
-            https://raw.githubusercontent.com/super-q/super-q/${{ inputs.super-q-ref }}/docker/install-quartus.sh
-          chmod +x /tmp/install-quartus.sh
           sudo mkdir -p /opt/intelFPGA_lite
           sudo chown "$USER" /opt/intelFPGA_lite
-          /tmp/install-quartus.sh "$QUARTUS_VERSION"
+          superq install-quartus --accept-eula --version="${{ inputs.quartus-version }}"
 
       - name: Export Quartus env
         run: |
           echo "QUARTUS_ROOTDIR=/opt/intelFPGA_lite/${{ inputs.quartus-version }}/quartus" >> "$GITHUB_ENV"
           echo "/opt/intelFPGA_lite/${{ inputs.quartus-version }}/quartus/bin" >> "$GITHUB_PATH"
-
-      - name: Install super-q
-        run: |
-          pip install --upgrade pip
-          pip install "super-q @ git+https://github.com/super-q/super-q@${{ inputs.super-q-ref }}"
 
       - name: superq info
         run: superq info
