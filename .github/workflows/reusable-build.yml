@@ -94,12 +94,16 @@ jobs:
 
       - name: Install apt runtime deps
         run: |
+          set -euxo pipefail
           sudo dpkg --add-architecture i386
           sudo apt-get update
+          # Deliberately minimal: Quartus's CLI tools (quartus_sh/fit/syn/sta)
+          # don't need libjpeg/libpng; those are GUI-only. libjpeg62-turbo is
+          # also not in Ubuntu 22.04 main/universe for amd64.
           sudo apt-get install -y --no-install-recommends \
               libc6-i386 libncurses5 libncurses6 libtinfo5 libxft2 \
-              libxrender1 libxtst6 libxi6 libfreetype6 libpng16-16 \
-              libjpeg62-turbo rsync zip
+              libxrender1 libxtst6 libxi6 libfreetype6 \
+              rsync zip
 
       - name: Restore Quartus cache
         id: cache

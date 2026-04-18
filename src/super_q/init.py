@@ -511,12 +511,12 @@ jobs:
 
       - name: Install apt runtime deps
         run: |
+          set -euxo pipefail
           sudo dpkg --add-architecture i386
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \\
               libc6-i386 libncurses5 libncurses6 libtinfo5 libxft2 \\
-              libxrender1 libxtst6 libxi6 libfreetype6 libpng16-16 \\
-              libjpeg62-turbo rsync zip
+              libxrender1 libxtst6 libxi6 libfreetype6 rsync zip
 
       - uses: actions/setup-python@v5
         with: {{ python-version: "3.11" }}
@@ -592,12 +592,12 @@ jobs:
 
       - name: Install apt runtime deps
         run: |
+          set -euxo pipefail
           sudo dpkg --add-architecture i386
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \\
               libc6-i386 libncurses5 libncurses6 libtinfo5 libxft2 \\
-              libxrender1 libxtst6 libxi6 libfreetype6 libpng16-16 \\
-              libjpeg62-turbo rsync zip
+              libxrender1 libxtst6 libxi6 libfreetype6 rsync zip
 
       - uses: actions/setup-python@v5
         with: {{ python-version: "3.11" }}
