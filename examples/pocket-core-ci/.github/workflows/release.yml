@@ -17,7 +17,7 @@ on:
 
 jobs:
   release:
-    uses: super-q/super-q/.github/workflows/reusable-release.yml@main
+    uses: openedfpga/super-q/.github/workflows/reusable-release.yml@main
     with:
       core-path: .
       seeds: "1-32"          # cast a wider net for a tagged release

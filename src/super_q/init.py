@@ -52,7 +52,7 @@ class InitOptions:
     description: str = ""
     version: str = "0.1.0"
     super_q_ref: str = "main"
-    super_q_repo: str = "super-q/super-q"   # <owner>/<repo> for the reusable workflow `uses:`
+    super_q_repo: str = "openedfpga/super-q"   # <owner>/<repo> for the reusable workflow `uses:`
     ci_only: bool = False
     force: bool = False                    # overwrite existing files
     git_init: bool = True                   # run `git init` after scaffold
@@ -304,7 +304,7 @@ _TEMPLATE_README = """# {full_name}
 {description}
 
 This is an Analogue Pocket openFPGA core. CI builds via
-[super-q](https://github.com/super-q/super-q) — every push runs a
+[super-q](https://github.com/openedfpga/super-q) — every push runs a
 seed sweep, every `v*` tag produces a release.
 
 ## Layout
@@ -337,7 +337,7 @@ seed sweep, every `v*` tag produces a release.
 
 ## Local iteration
 
-With [super-q](https://github.com/super-q/super-q) installed:
+With [super-q](https://github.com/openedfpga/super-q) installed:
 
 ```bash
 superq verify .                 # sanity-check the layout
@@ -349,7 +349,7 @@ superq explore . --budget=30m   # adaptive seed exploration
 ## References
 
 - [Analogue openFPGA Developer Docs](https://www.analogue.co/developer/docs/overview)
-- [super-q agent guide](https://github.com/super-q/super-q/blob/main/AGENTS.md)
+- [super-q agent guide](https://github.com/openedfpga/super-q/blob/main/AGENTS.md)
 """
 
 _TEMPLATE_FPGA_README = """# Quartus project
@@ -664,7 +664,7 @@ jobs:
             ${{{{ steps.pack.outputs.zip }}}}
             ${{{{ steps.bits.outputs.rbf_r }}}}
           body: |
-            Built with [super-q](https://github.com/super-q/super-q).
+            Built with [super-q](https://github.com/openedfpga/super-q).
             version: `${{{{ steps.ver.outputs.version }}}}`
 
             Unpack the zip at the root of your Pocket's SD card.

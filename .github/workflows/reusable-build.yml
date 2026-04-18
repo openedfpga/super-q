@@ -4,7 +4,7 @@
 #
 #   jobs:
 #     build:
-#       uses: super-q/super-q/.github/workflows/reusable-build.yml@main
+#       uses: openedfpga/super-q/.github/workflows/reusable-build.yml@main
 #       with:
 #         core-path: .
 #         seeds: "1-8"
@@ -116,7 +116,7 @@ jobs:
       - name: Install super-q
         run: |
           pip install --upgrade pip
-          pip install "super-q @ git+https://github.com/super-q/super-q@${{ inputs.super-q-ref }}"
+          pip install "super-q @ git+https://github.com/openedfpga/super-q@${{ inputs.super-q-ref }}"
 
       - name: Download + install Quartus (on cache miss)
         if: steps.cache.outputs.cache-hit != 'true'

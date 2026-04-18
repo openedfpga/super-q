@@ -12,7 +12,7 @@ on:
 
 jobs:
   build:
-    uses: super-q/super-q/.github/workflows/reusable-build.yml@main
+    uses: openedfpga/super-q/.github/workflows/reusable-build.yml@main
     with:
       core-path: .            # or "src/fpga" if your core lives in a subdir
       seeds: "1-8"            # or "1-16" for a wider sweep

@@ -863,7 +863,7 @@ def init_cmd(
     super_q_ref: str = typer.Option("main", "--super-q-ref",
                                      help="super-q Git ref the generated workflows will call"),
     super_q_repo: str = typer.Option(
-        "super-q/super-q", "--super-q-repo",
+        "openedfpga/super-q", "--super-q-repo",
         help="<owner>/<repo> where super-q lives on GitHub (e.g. ericlewis/super-q)",
     ),
     platform_id: list[str] = typer.Option(
@@ -883,7 +883,7 @@ def init_cmd(
     super_q_pip: str = typer.Option(
         "", "--super-q-pip",
         help="pip install target for --inline mode (e.g. a private git URL). "
-             "Defaults to `super-q @ git+https://github.com/super-q/super-q@<ref>`.",
+             "Defaults to `super-q @ git+https://github.com/openedfpga/super-q@<ref>`.",
     ),
     seeds_build: str = typer.Option("1-8", "--seeds-build"),
     seeds_release: str = typer.Option("1-32", "--seeds-release"),

@@ -174,7 +174,7 @@ By default workflows pull super-q from `main`. To pin:
 ```yaml
 jobs:
   build:
-    uses: super-q/super-q/.github/workflows/reusable-build.yml@v0.1.0
+    uses: openedfpga/super-q/.github/workflows/reusable-build.yml@v0.1.0
     with:
       super-q-ref: v0.1.0          # also install this ref into the runner
 ```

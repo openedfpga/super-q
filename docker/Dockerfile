@@ -79,7 +79,7 @@ RUN useradd -m -u 1000 builder && \
 USER builder
 WORKDIR /work
 
-LABEL org.opencontainers.image.source="https://github.com/super-q/super-q"
+LABEL org.opencontainers.image.source="https://github.com/openedfpga/super-q"
 LABEL org.opencontainers.image.description="super-q: Analogue Pocket core builds with Quartus Lite ${QUARTUS_VERSION}"
 LABEL org.opencontainers.image.licenses="MIT"
 

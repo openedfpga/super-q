@@ -15,8 +15,8 @@ def test_inline_workflow_has_no_uses_reference(tmp_path: Path):
     release = (tmp_path / "a.b/.github/workflows/release.yml").read_text()
 
     # The telltale cross-repo reference must not appear.
-    assert "uses: super-q/super-q" not in build
-    assert "uses: super-q/super-q" not in release
+    assert "uses: openedfpga/super-q" not in build
+    assert "uses: openedfpga/super-q" not in release
     assert "raw.githubusercontent.com" not in build
     assert "raw.githubusercontent.com" not in release
 
@@ -64,7 +64,7 @@ def test_reusable_and_inline_produce_different_outputs(tmp_path: Path):
         ))
     reusable = (r / ".github/workflows/build.yml").read_text()
     inline = (i / ".github/workflows/build.yml").read_text()
-    assert "uses: super-q/super-q" in reusable
-    assert "uses: super-q/super-q" not in inline
+    assert "uses: openedfpga/super-q" in reusable
+    assert "uses: openedfpga/super-q" not in inline
     # Inline is necessarily larger — it expands everything.
     assert len(inline) > len(reusable) * 3

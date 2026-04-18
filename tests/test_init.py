@@ -95,8 +95,7 @@ def test_workflow_references_super_q_ref(tmp_path: Path):
 
 
 def test_workflow_respects_super_q_repo_override(tmp_path: Path):
-    """When super-q lives at ericlewis/super-q instead of super-q/super-q,
-    the generated `uses:` line follows the override."""
+    """When a caller overrides `super_q_repo`, the `uses:` line follows."""
     opts = InitOptions(
         target=tmp_path / "t", author="a", name="b",
         super_q_repo="ericlewis/super-q",
@@ -107,8 +106,16 @@ def test_workflow_respects_super_q_repo_override(tmp_path: Path):
     release = (tmp_path / "t/.github/workflows/release.yml").read_text()
     assert "uses: ericlewis/super-q/.github/workflows/reusable-build.yml" in build
     assert "uses: ericlewis/super-q/.github/workflows/reusable-release.yml" in release
-    assert "super-q/super-q" not in build
-    assert "super-q/super-q" not in release
+    assert "openedfpga/super-q" not in build
+    assert "openedfpga/super-q" not in release
+
+
+def test_default_workflow_points_at_openedfpga(tmp_path: Path):
+    """Default repo should be openedfpga/super-q."""
+    opts = InitOptions(target=tmp_path / "t", author="a", name="b", git_init=False)
+    scaffold(opts)
+    build = (tmp_path / "t/.github/workflows/build.yml").read_text()
+    assert "uses: openedfpga/super-q/.github/workflows/reusable-build.yml" in build
 
 
 def test_multiple_platforms(tmp_path: Path):
