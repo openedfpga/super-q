@@ -1240,8 +1240,10 @@ def ci_build(
     backend: str = typer.Option("", "--backend"),
     target_slack: float = typer.Option(0.0, "--target-slack-ns"),
     timeout: int = typer.Option(
-        15 * 60, "--seed-timeout",
-        help="Per-seed Quartus wall-clock cap (seconds). Scheduler SIGTERMs anything past this.",
+        25 * 60, "--seed-timeout",
+        help="Per-seed Quartus wall-clock cap (seconds). Scheduler SIGTERMs anything past this. "
+             "On GHA's 4-vCPU runner, Quartus Lite's single-thread compile + 4-way parallel "
+             "contention makes a Popeye-sized core take ~12–18 min; 25 min leaves headroom.",
     ),
 ) -> None:
     """Run a sweep tuned for CI: annotations on stderr, JSON on stdout, GHA outputs."""
