@@ -73,66 +73,39 @@ mkdir -p "${PREFIX}"
     --disable-components quartus_help
 
 # --------------------------------------------------------------------------
-# Aggressive trim.
+# Conservative trim.
 #
-# Pocket cores only compile for Cyclone V 5CEBA4F23C8 via headless
-# quartus_sh. Everything else (simulators, HLS, NiosII, non-Cyclone-V
-# devices, docs, PDFs) is shipping weight we pay at cache-restore time
-# but never use. Strip it out now so the cache is ~5 GB instead of
-# ~15 GB, and so the 10 GB GHA cache ceiling isn't in play.
+# Lesson from the Popeye CI runs: anything inside `${PREFIX}/quartus/` is
+# dangerous to touch. Quartus is internally cross-linked — `quartus_asm`
+# dlopens pgmio which scans `pgmparts/`, binaries share `common/pkgdb`,
+# fitter needs `common/devinfo/*`, etc. An "obviously unused" directory
+# may be the one quartus_asm crashes without.
+#
+# So we only drop Quartus SIBLINGS (NiosII, ModelSim, HLS — whole separate
+# products with their own installers), plus obviously non-runtime files
+# (docs, PDFs, simulation-only `eda/`). Everything inside quartus/common,
+# quartus/linux64, quartus/pgmparts, quartus/devinfo stays intact.
+#
+# Result: ~9 GB install instead of ~21 GB. Fits in GHA's 10 GB cache
+# ceiling and still builds a bitstream.
 # --------------------------------------------------------------------------
 QUARTUS_DIR="${PREFIX}/quartus"
 echo "pre-trim size: $(du -sh "${PREFIX}" 2>/dev/null | cut -f1)"
 
-# Siblings of quartus/ we don't need.
+# Siblings of quartus/ — entirely separate products we never touch.
 for sib in nios2eds niosv modelsim_ase modelsim_ae questa_fse questa_fe \
            hls hld embedded ip_compiler uninstall logs; do
     rm -rf "${PREFIX}/${sib}" 2>/dev/null || true
 done
 
-# Quartus subtrees we don't need. `eda/` is simulation-glue; `sopc_builder/`
-# and `dni/` are Qsys; GUI help/docs/pdf are wasted bytes on a headless
-# runner.
-#
-# DO NOT remove `pgmparts/` — the assembler (quartus_asm) loads the parts
-# database from there to emit bitstreams. Removing it produces a runtime
-# crash in PGMIO_DEVICE_MANAGER::lookup_device during asm_write_device_file
-# and kills every seed with rc=3. (Learned the hard way on Popeye.)
-for sub in eda sopc_builder dni docs help examples \
-           common/help common/devinfo_html common/pkgdb; do
+# Quartus subtrees that are purely simulation-glue or GUI assets. `eda/`
+# drives third-party simulators; `docs/`, `help/`, `examples/` are
+# documentation and sample projects.
+for sub in eda docs help examples; do
     rm -rf "${QUARTUS_DIR}/${sub}" 2>/dev/null || true
 done
 
-# Only Cyclone V device libraries are needed (Pocket is 5CEBA4F23C8).
-if [ -d "${QUARTUS_DIR}/common/devinfo" ]; then
-    pushd "${QUARTUS_DIR}/common/devinfo" >/dev/null
-    for d in */; do
-        case "${d%/}" in
-            cyclonev|cyclone|common|shared) ;;
-            *) rm -rf "${d}" ;;
-        esac
-    done
-    popd >/dev/null
-fi
-
-# linux/ has per-tool binary folders; we only ever call quartus_sh /
-# quartus_fit / quartus_syn / quartus_sta / quartus_asm / quartus_cpf
-# / quartus_map from our flow. Keep them, toss the rest.
-if [ -d "${QUARTUS_DIR}/linux64" ]; then
-    pushd "${QUARTUS_DIR}/linux64" >/dev/null
-    for f in quartus_*; do
-        case "$f" in
-            quartus_sh|quartus_fit|quartus_syn|quartus_sta|quartus_asm| \
-            quartus_cpf|quartus_map|quartus_cdb|quartus_drc|quartus_eda| \
-            quartus_pow|quartus_si|quartus_tan|quartus_jli|quartus_jbcc| \
-            quartus_npp|quartus_stp) ;;
-            quartus_pgm*|quartus_pgmw*|quartus_gui*|quartus_help*|quartus_ipgenerate*) \
-                rm -f "$f" || true ;;
-        esac
-    done
-    popd >/dev/null
-fi
-
+# Uninstall scaffolding + PDFs/HTML docs scattered around.
 find "${QUARTUS_DIR}" -type d -name 'uninstall'    -prune -exec rm -rf {} + 2>/dev/null || true
 find "${PREFIX}"      -type f -name '*.log'        -delete 2>/dev/null || true
 find "${PREFIX}"      -type f \( -name '*.pdf' -o -name '*.html' -o -name '*.htm' \) \
@@ -140,5 +113,6 @@ find "${PREFIX}"      -type f \( -name '*.pdf' -o -name '*.html' -o -name '*.htm
 find "${PREFIX}"      -type d -name '.pfinst-*'    -prune -exec rm -rf {} + 2>/dev/null || true
 
 echo "post-trim size: $(du -sh "${PREFIX}" 2>/dev/null | cut -f1)"
+echo "pgmparts present: $([ -d "${QUARTUS_DIR}/pgmparts" ] && echo yes || echo MISSING)"
 echo "quartus ${VERSION} installed at ${PREFIX}"
 "${SH}" --version 2>/dev/null | head -1 || true

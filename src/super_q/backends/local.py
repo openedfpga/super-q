@@ -21,9 +21,19 @@ class LocalBackend:
     name = "local"
 
     def __init__(self, *, max_parallel: int | None = None,
-                 threads_per_task: int = 2):
+                 threads_per_task: int = 1):
+        # Quartus Lite (the edition we target) is single-threaded for
+        # compile regardless of NUM_PARALLEL_PROCESSORS — it literally
+        # logs `Info (20029): Only one processor detected - disabling
+        # parallel compilation`. So the honest default is 1 thread/seed
+        # and `max_parallel = cpu_count`, giving a 4-vCPU runner 4
+        # concurrent compiles instead of 2.
+        #
+        # The `threads_per_task` knob exists for Pro-edition users where
+        # >1 thread/compile is real; it still controls the env var we
+        # set, just no longer inflates the slot math.
         cap = host_capacity()
-        self._max = max_parallel or max(1, cap.cpu_count // max(1, threads_per_task))
+        self._max = max_parallel or max(1, cap.cpu_count)
         self._threads = threads_per_task
         self._sem = threading.Semaphore(self._max)
         self._lock = threading.Lock()
