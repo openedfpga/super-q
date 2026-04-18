@@ -74,6 +74,12 @@ class LocalBackend:
                   if spec.mode == "split-fit"
                   else quartus.run_full_compile(req))
 
+        # When Quartus errored out (not just timing miss), surface the
+        # last chunk of its log to stderr so CI operators and agents
+        # don't have to download the workflow artifact to see why.
+        if not result.ok and result.log_path and result.log_path.exists():
+            _tail_log_to_stderr(result.log_path, spec.seed, result.error)
+
         artifacts = collect(
             spec.core,
             spec.job_id,
@@ -102,3 +108,27 @@ class LocalBackend:
         import shutil
         if work_dir.exists() and os.environ.get("SUPERQ_KEEP_WORK") != "1":
             shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def _tail_log_to_stderr(log_path: Path, seed: int, error: str | None,
+                        *, lines: int = 40) -> None:
+    """Print the last N log lines to stderr, fenced with a header.
+
+    Specifically targets the case where Quartus or our TCL wrapper
+    errored — those always leave the diagnostic at the tail of the log.
+    For a timing-miss-only failure (rc=0 but slack<0) we skip this
+    noise since the failure is obvious from the timing summary.
+    """
+    import sys as _s
+    # Timing misses have a specific error prefix from run_full_compile.
+    if error and error.startswith("timing not met"):
+        return
+    try:
+        with open(log_path, errors="replace") as fh:
+            tail = fh.readlines()[-lines:]
+    except OSError:
+        return
+    print(f"\n--- seed={seed} last {len(tail)} lines of {log_path} ---",
+          file=_s.stderr, flush=True)
+    _s.stderr.writelines(tail)
+    print(f"--- end seed={seed} ---", file=_s.stderr, flush=True)

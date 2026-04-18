@@ -216,3 +216,30 @@ jobs:
             ${{ inputs.core-path }}/.superq/artifacts/**/seed-*/*.sta.rpt
           if-no-files-found: error
           retention-days: 30
+
+      # On failure, grab Quartus's own logs + super-q's per-seed build
+      # logs so the root cause is diagnosable without re-running. Runs
+      # unconditionally so we always have evidence, even for intermittent
+      # races where the sweep technically passed but left a noisy trail.
+      - name: Dump build logs (tail) on failure
+        if: always()
+        run: |
+          echo "### super-q job logs" >> "$GITHUB_STEP_SUMMARY"
+          for f in $(find "${{ inputs.core-path }}/.superq" ~/.cache/super-q 2>/dev/null -name 'superq*.log' -o -name 'build.log' | head -8); do
+            echo "::group::$f (last 80 lines)"
+            tail -80 "$f" || true
+            echo "::endgroup::"
+          done || true
+
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: superq-logs-${{ github.run_id }}
+          path: |
+            ${{ inputs.core-path }}/.superq/**/*.log
+            ${{ inputs.core-path }}/.superq/artifacts/**/seed-*/*.sta.rpt
+            ${{ inputs.core-path }}/.superq/artifacts/**/seed-*/timing.json
+            ~/.cache/super-q/**/*.log
+          if-no-files-found: warn
+          retention-days: 14
