@@ -1,0 +1,12 @@
+.git
+.github
+.superq
+output_files/
+db/
+incremental_db/
+qdb/
+greybox_tmp/
+simulation/
+__pycache__/
+*.pyc
+.DS_Store

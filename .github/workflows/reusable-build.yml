@@ -1,0 +1,181 @@
+# Reusable workflow: build a Pocket core on GitHub Actions.
+#
+# Called by a user repo's workflow via:
+#
+#   jobs:
+#     build:
+#       uses: super-q/super-q/.github/workflows/reusable-build.yml@main
+#       with:
+#         core-path: .
+#         seeds: "1-8"
+#         parallel: 4
+#
+# Handles:
+#   * apt runtime deps
+#   * Quartus Lite 24.1 install (cached between runs)
+#   * super-q install
+#   * seed sweep via `superq ci build`
+#   * .rbf_r artifact upload
+
+name: super-q · build
+on:
+  workflow_call:
+    inputs:
+      core-path:
+        description: Path to the Pocket core root (inside the calling repo).
+        required: false
+        type: string
+        default: "."
+      seeds:
+        description: Seed range (e.g. "1-8") or single seed.
+        required: false
+        type: string
+        default: "1-8"
+      parallel:
+        description: Concurrent seeds.
+        required: false
+        type: number
+        default: 4
+      mode:
+        description: full | split-fit
+        required: false
+        type: string
+        default: split-fit
+      target-slack-ns:
+        description: Require slack ≥ this many ns to pass.
+        required: false
+        type: number
+        default: 0
+      quartus-version:
+        description: Quartus Lite version to install.
+        required: false
+        type: string
+        default: "24.1"
+      super-q-ref:
+        description: Git ref (tag/sha) of super-q to install; "main" for bleeding edge.
+        required: false
+        type: string
+        default: main
+      artifact-name:
+        description: GHA artifact name; defaults to <author>.<core>-<run>.
+        required: false
+        type: string
+        default: ""
+    secrets:
+      QUARTUS_URL:
+        description: Optional private mirror URL for the Quartus tar; avoids Intel rate limits.
+        required: false
+    outputs:
+      passed:
+        description: "true if a seed met timing"
+        value: ${{ jobs.build.outputs.passed }}
+      best-seed:
+        description: "Winning seed number"
+        value: ${{ jobs.build.outputs.best-seed }}
+      rbf-path:
+        description: "Repo-relative path to the winning .rbf_r"
+        value: ${{ jobs.build.outputs.rbf-path }}
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    outputs:
+      passed: ${{ steps.sweep.outputs.passed }}
+      best-seed: ${{ steps.sweep.outputs.best_seed }}
+      rbf-path: ${{ steps.sweep.outputs.rbf_r_path }}
+
+    env:
+      QUARTUS_ROOTDIR: /opt/intelFPGA_lite/${{ inputs.quartus-version }}/quartus
+
+    steps:
+      - name: Checkout calling repo
+        uses: actions/checkout@v4
+
+      - name: Install apt runtime deps
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+              libc6-i386 libncurses5 libncurses6 libtinfo5 libxft2 \
+              libxrender1 libxtst6 libxi6 libfreetype6 libpng16-16 \
+              libjpeg62-turbo rsync zip
+
+      - name: Restore Quartus cache
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: /opt/intelFPGA_lite/${{ inputs.quartus-version }}
+          key: quartus-${{ inputs.quartus-version }}-v2
+          restore-keys: |
+            quartus-${{ inputs.quartus-version }}-
+
+      - name: Download + install Quartus (on cache miss)
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          SUPERQ_ACCEPT_EULA: "1"                # CI operator attests EULA
+          QUARTUS_URL: ${{ secrets.QUARTUS_URL }}
+          QUARTUS_VERSION: ${{ inputs.quartus-version }}
+        run: |
+          set -euxo pipefail
+          # Pull the idempotent installer script from super-q. We curl
+          # it here so we don't need to pip-install super-q before the
+          # Quartus layer is cached.
+          curl -fsSL -o /tmp/install-quartus.sh \
+            https://raw.githubusercontent.com/super-q/super-q/${{ inputs.super-q-ref }}/docker/install-quartus.sh
+          chmod +x /tmp/install-quartus.sh
+          sudo mkdir -p /opt/intelFPGA_lite
+          sudo chown "$USER" /opt/intelFPGA_lite
+          /tmp/install-quartus.sh "$QUARTUS_VERSION"
+
+      - name: Export Quartus env
+        run: |
+          echo "QUARTUS_ROOTDIR=/opt/intelFPGA_lite/${{ inputs.quartus-version }}/quartus" >> "$GITHUB_ENV"
+          echo "/opt/intelFPGA_lite/${{ inputs.quartus-version }}/quartus/bin" >> "$GITHUB_PATH"
+
+      - name: Install super-q
+        run: |
+          pip install --upgrade pip
+          pip install "super-q @ git+https://github.com/super-q/super-q@${{ inputs.super-q-ref }}"
+
+      - name: superq info
+        run: superq info
+
+      - name: Run seed sweep
+        id: sweep
+        run: |
+          SEEDS="${{ inputs.seeds }}"
+          if [[ "$SEEDS" == *-* ]]; then
+            MIN="${SEEDS%-*}"
+            MAX="${SEEDS#*-}"
+            superq ci build "${{ inputs.core-path }}" \
+              --min="$MIN" --max="$MAX" \
+              --parallel="${{ inputs.parallel }}" \
+              --mode="${{ inputs.mode }}" \
+              --target-slack-ns="${{ inputs.target-slack-ns }}"
+          else
+            superq build "${{ inputs.core-path }}" --seed="$SEEDS" --json | tee build.json
+            python -c 'import json,sys,os;d=json.load(open("build.json"));b=d.get("best") or {};
+open(os.environ["GITHUB_OUTPUT"], "a").write(
+  f"passed={\"true\" if d.get(\"best\") else \"false\"}\n"
+  f"best_seed={b.get(\"seed\",\"\")}\n"
+  f"rbf_r_path={b.get(\"rbf_r_path\",\"\")}\n")'
+          fi
+
+      - name: Build summary
+        if: always() && steps.sweep.outputs.passed == 'true'
+        run: |
+          echo "✅ super-q: seed ${{ steps.sweep.outputs.best_seed }} passed" >> "$GITHUB_STEP_SUMMARY"
+          echo "bitstream: \`${{ steps.sweep.outputs.rbf_r_path }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload bitstream artifact
+        if: steps.sweep.outputs.passed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name != '' && inputs.artifact-name || format('superq-{0}', github.run_id) }}
+          path: |
+            ${{ inputs.core-path }}/.superq/artifacts/**/seed-*/bitstream.rbf_r
+            ${{ inputs.core-path }}/.superq/artifacts/**/seed-*/timing.json
+            ${{ inputs.core-path }}/.superq/artifacts/**/seed-*/*.sta.rpt
+          if-no-files-found: error
+          retention-days: 30

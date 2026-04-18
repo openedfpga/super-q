@@ -1,0 +1,51 @@
+# Example GitLab CI pipeline for super-q.
+# Drop this into the root of a Pocket core repo.
+
+stages: [build]
+
+.superq: &superq
+  image: python:3.11-bookworm
+  cache:
+    key: quartus-24.1
+    paths: [.cache/quartus/]
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y --no-install-recommends
+        libc6-i386 libncurses5 libncurses6 libtinfo5 libxft2
+        libxrender1 libxtst6 libxi6 libfreetype6 libpng16-16 curl
+    - |
+      if [ ! -d "$HOME/intelFPGA_lite/24.1" ]; then
+        curl -fL -o q.tar \
+          https://downloads.intel.com/akdlm/software/acdsinst/24.1std/917/ib_tar/Quartus-lite-24.1std.0.917-linux.tar
+        mkdir -p q && tar -xf q.tar -C q
+        bash q/setup.sh --mode unattended --accept_eula 1 \
+          --installdir "$HOME/intelFPGA_lite/24.1" \
+          --disable-components quartus_help
+      fi
+    - export QUARTUS_ROOTDIR="$HOME/intelFPGA_lite/24.1/quartus"
+    - export PATH="$QUARTUS_ROOTDIR/bin:$PATH"
+    - pip install super-q
+
+quick-sweep:
+  <<: *superq
+  stage: build
+  script:
+    - superq ci build . --min=1 --max=4 --parallel=2
+  artifacts:
+    when: always
+    paths:
+      - .superq/artifacts/**/seed-*/bitstream.rbf_r
+      - .superq/artifacts/**/seed-*/timing.json
+    expire_in: 30 days
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+full-explore:
+  <<: *superq
+  stage: build
+  script:
+    - superq ci explore . --budget=1800
+  artifacts:
+    paths: [.superq/artifacts/]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

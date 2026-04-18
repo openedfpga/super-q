@@ -1,0 +1,24 @@
+# Copy this file into your Pocket core repo at
+#   .github/workflows/build.yml
+# and every push/PR will run a seed sweep against the current HEAD.
+
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:       # lets you kick a manual run from the Actions tab
+
+jobs:
+  build:
+    uses: super-q/super-q/.github/workflows/reusable-build.yml@main
+    with:
+      core-path: .            # or "src/fpga" if your core lives in a subdir
+      seeds: "1-8"            # or "1-16" for a wider sweep
+      parallel: 4
+      mode: split-fit         # share synth across seeds
+    # Optional: a Secrets-level QUARTUS_URL pointing at your private mirror
+    # of the Intel installer tar, in case Intel rate-limits public CI pulls.
+    # secrets:
+    #   QUARTUS_URL: ${{ secrets.QUARTUS_URL }}

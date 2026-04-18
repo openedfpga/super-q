@@ -1,0 +1,64 @@
+# Publishes the slim super-q image to ghcr.io/<owner>/super-q:<tag>.
+# Users don't need this if they're happy with the reusable-build flow
+# (which installs super-q directly on the runner), but it's handy if:
+#   * you want to bake a specific super-q commit into an image for
+#     reproducible builds across hundreds of cores
+#   * you're running super-q under a non-GHA runner (K8s, local Docker)
+#
+# The image does NOT include Quartus — see docker/Dockerfile for why.
+
+name: super-q · publish docker image
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docker/**'
+      - 'src/**'
+      - 'tcl/**'
+      - 'pyproject.toml'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags
+        id: tags
+        run: |
+          REPO="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/super-q"
+          TAGS="${REPO}:latest,${REPO}:${GITHUB_SHA::7}"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+            TAGS="${TAGS},${REPO}:${VERSION}"
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
+      - name: Build + push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            QUARTUS_VERSION=24.1
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

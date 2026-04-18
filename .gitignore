@@ -1,0 +1,40 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# super-q runtime
+.superq/
+*.rbf
+*.rbf_r
+*.sof
+*.pof
+*.jdi
+output_files/
+db/
+incremental_db/
+qdb/
+
+# Quartus artifacts
+*.qws
+*.qws.bak
+*.bak
+*.tmp
+.qsys_edit/
+greybox_tmp/
+simulation/
+tmp-clearbox/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

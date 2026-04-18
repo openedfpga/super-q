@@ -1,0 +1,31 @@
+# Copy this file into your Pocket core repo at
+#   .github/workflows/release.yml
+# Tag a commit (`git tag v0.3.0 && git push --tags`) and super-q runs a
+# thorough seed sweep, packages the canonical Pocket zip, and attaches
+# it to a new GitHub Release.
+
+name: release
+
+on:
+  push:
+    tags: ['v*']             # any v0.3.1, v2.0, etc.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Explicit version (otherwise inferred from the tag)
+        required: false
+
+jobs:
+  release:
+    uses: super-q/super-q/.github/workflows/reusable-release.yml@main
+    with:
+      core-path: .
+      seeds: "1-32"          # cast a wider net for a tagged release
+      parallel: 4
+      mode: split-fit
+      version: ${{ inputs.version || '' }}
+      # draft: true            # un-comment to gate publish behind a human
+    # secrets:
+    #   QUARTUS_URL: ${{ secrets.QUARTUS_URL }}
+    permissions:
+      contents: write          # required for creating Releases

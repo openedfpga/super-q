@@ -1,0 +1,117 @@
+name: super-q
+description: Build Analogue Pocket cores with super-q seed sweeps.
+author: super-q
+
+inputs:
+  core-path:
+    description: Path to the Pocket core root (defaults to current repo).
+    required: false
+    default: "."
+  seeds:
+    description: Seed range (e.g. "1-16") or a single seed.
+    required: false
+    default: "1-8"
+  parallel:
+    description: Concurrent seeds.
+    required: false
+    default: "4"
+  mode:
+    description: full | split-fit
+    required: false
+    default: full
+  pool:
+    description: Named remote pool from ~/.superq/config.toml (or "local").
+    required: false
+    default: local
+  target-slack-ns:
+    description: Require slack ≥ this many ns.
+    required: false
+    default: "0"
+  quartus-version:
+    description: Quartus Lite version to install.
+    required: false
+    default: "24.1"
+  upload-artifacts:
+    description: Upload the winning .rbf_r as a workflow artifact.
+    required: false
+    default: "true"
+
+outputs:
+  passed:
+    description: "true if a seed met timing"
+    value: ${{ steps.sweep.outputs.passed }}
+  best-seed:
+    description: "Winning seed number"
+    value: ${{ steps.sweep.outputs.best_seed }}
+  best-slack-ns:
+    description: "Winning worst-case setup slack"
+    value: ${{ steps.sweep.outputs.best_slack_ns }}
+  rbf-path:
+    description: "Path to the .rbf_r inside .superq/artifacts"
+    value: ${{ steps.sweep.outputs.rbf_r_path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Cache Quartus
+      id: cache-quartus
+      uses: actions/cache@v4
+      with:
+        path: ~/intelFPGA_lite/${{ inputs.quartus-version }}
+        key: quartus-${{ inputs.quartus-version }}-v1
+
+    - name: Install Quartus
+      if: steps.cache-quartus.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euxo pipefail
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          libc6-i386 libncurses5 libncurses6 libtinfo5 libxft2 \
+          libxrender1 libxtst6 libxi6 libfreetype6 libpng16-16
+        VER="${{ inputs.quartus-version }}"
+        curl -fL -o q.tar \
+          "https://downloads.intel.com/akdlm/software/acdsinst/${VER}std/ib_tar/Quartus-lite-${VER}std.0.917-linux.tar"
+        mkdir -p q && tar -xf q.tar -C q
+        sudo bash q/setup.sh --mode unattended --accept_eula 1 \
+          --installdir "$HOME/intelFPGA_lite/${VER}" \
+          --disable-components quartus_help
+
+    - name: Export Quartus env
+      shell: bash
+      run: |
+        echo "QUARTUS_ROOTDIR=$HOME/intelFPGA_lite/${{ inputs.quartus-version }}/quartus" >> "$GITHUB_ENV"
+        echo "$HOME/intelFPGA_lite/${{ inputs.quartus-version }}/quartus/bin" >> "$GITHUB_PATH"
+
+    - name: Install super-q
+      shell: bash
+      run: pip install super-q
+
+    - name: Sweep
+      id: sweep
+      shell: bash
+      env:
+        SUPERQ_POOL: ${{ inputs.pool }}
+      run: |
+        set -euo pipefail
+        SEEDS="${{ inputs.seeds }}"
+        if [[ "$SEEDS" == *-* ]]; then
+          MIN="${SEEDS%-*}"; MAX="${SEEDS#*-}"
+          superq ci build "${{ inputs.core-path }}" \
+            --min="$MIN" --max="$MAX" \
+            --parallel="${{ inputs.parallel }}" \
+            --mode="${{ inputs.mode }}" \
+            --target-slack-ns="${{ inputs.target-slack-ns }}"
+        else
+          superq build "${{ inputs.core-path }}" --seed="$SEEDS" --json \
+            > superq-build.json
+        fi
+
+    - name: Upload artifacts
+      if: inputs.upload-artifacts == 'true' && steps.sweep.outputs.passed == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: superq-${{ github.run_id }}-${{ steps.sweep.outputs.best_seed }}
+        path: |
+          ${{ inputs.core-path }}/.superq/artifacts/**/seed-*/bitstream.rbf_r
+          ${{ inputs.core-path }}/.superq/artifacts/**/seed-*/timing.json
