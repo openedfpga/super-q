@@ -92,6 +92,12 @@ jobs:
       - name: Checkout calling repo
         uses: actions/checkout@v4
 
+      # Ubuntu 22.04's system Python is 3.10, but super-q needs 3.11+.
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Install apt runtime deps
         run: |
           set -euxo pipefail
