@@ -524,23 +524,30 @@ jobs:
       - name: Install super-q
         run: pip install "{super_q_pip}"
 
+      # Quartus install is 21 GB unpacked; GHA's / only has ~14 GB free.
+      # Symlink /opt/intelFPGA_lite onto the ~65 GB /mnt scratch disk.
+      - name: Prepare large-disk location for Quartus
+        run: |
+          set -euxo pipefail
+          sudo rm -rf /opt/intelFPGA_lite
+          sudo mkdir -p /mnt/intelFPGA_lite
+          sudo chown "$USER":"$USER" /mnt/intelFPGA_lite
+          sudo ln -s /mnt/intelFPGA_lite /opt/intelFPGA_lite
+
       - name: Restore Quartus cache
         id: cache
         uses: actions/cache@v4
         with:
-          path: /opt/intelFPGA_lite/24.1
-          key: quartus-24.1-v2
+          path: /mnt/intelFPGA_lite/24.1
+          key: quartus-24.1-v3-mnt
           restore-keys: |
-            quartus-24.1-
+            quartus-24.1-v3-
 
       - name: Install Quartus (on cache miss)
         if: steps.cache.outputs.cache-hit != 'true'
         env:
           QUARTUS_URL: ${{{{ secrets.QUARTUS_URL }}}}
-        run: |
-          sudo mkdir -p /opt/intelFPGA_lite
-          sudo chown "$USER" /opt/intelFPGA_lite
-          superq install-quartus --accept-eula --version=24.1
+        run: superq install-quartus --accept-eula --version=24.1
 
       - name: Export Quartus env
         run: |
@@ -605,23 +612,30 @@ jobs:
       - name: Install super-q
         run: pip install "{super_q_pip}"
 
+      # Quartus install is 21 GB unpacked; GHA's / only has ~14 GB free.
+      # Symlink /opt/intelFPGA_lite onto the ~65 GB /mnt scratch disk.
+      - name: Prepare large-disk location for Quartus
+        run: |
+          set -euxo pipefail
+          sudo rm -rf /opt/intelFPGA_lite
+          sudo mkdir -p /mnt/intelFPGA_lite
+          sudo chown "$USER":"$USER" /mnt/intelFPGA_lite
+          sudo ln -s /mnt/intelFPGA_lite /opt/intelFPGA_lite
+
       - name: Restore Quartus cache
         id: cache
         uses: actions/cache@v4
         with:
-          path: /opt/intelFPGA_lite/24.1
-          key: quartus-24.1-v2
+          path: /mnt/intelFPGA_lite/24.1
+          key: quartus-24.1-v3-mnt
           restore-keys: |
-            quartus-24.1-
+            quartus-24.1-v3-
 
       - name: Install Quartus (on cache miss)
         if: steps.cache.outputs.cache-hit != 'true'
         env:
           QUARTUS_URL: ${{{{ secrets.QUARTUS_URL }}}}
-        run: |
-          sudo mkdir -p /opt/intelFPGA_lite
-          sudo chown "$USER" /opt/intelFPGA_lite
-          superq install-quartus --accept-eula --version=24.1
+        run: superq install-quartus --accept-eula --version=24.1
 
       - name: Export Quartus env
         run: |
